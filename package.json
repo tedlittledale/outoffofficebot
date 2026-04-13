@@ -1,0 +1,30 @@
+{
+  "name": "ooo-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot to manage Gmail out-of-office status",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/src/index.js",
+    "build": "tsc",
+    "auth-setup": "tsx scripts/auth-setup.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
+    "luxon": "^3.5.0",
+    "node-cron": "^3.0.3",
+    "node-schedule": "^2.1.1",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.4.2",
+    "@types/node": "^22.10.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-schedule": "^2.1.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
