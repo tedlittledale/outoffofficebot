@@ -29,5 +29,8 @@ export const config = {
     flexible:
       process.env['OOO_FLEXIBLE_MESSAGE'] ??
       `<p>Hi - I'm working flexibly today and may be slower than usual to respond. I'll get back to you as soon as I can.</p><p>Ted</p>`,
+    childcare:
+      process.env['OOO_CHILDCARE_MESSAGE'] ??
+      `<p>Hi - I'm looking after Dylan/Erin today. I'll be checking emails, but won't be working.</p><p>Ted</p>`,
   },
 } as const;
