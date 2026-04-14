@@ -14,7 +14,7 @@ import { scheduleOutAt, cancelPendingSchedule, getPendingSchedule } from '../sch
 const auth = createGmailAuth();
 
 interface ParsedCommand {
-  type: 'in' | 'out' | 'flexible' | 'status' | 'out_from' | 'out_until' | 'unknown';
+  type: 'in' | 'out' | 'flexible' | 'childcare' | 'status' | 'out_from' | 'out_until' | 'unknown';
   time?: DateTime;
 }
 
@@ -86,6 +86,10 @@ export function parseCommand(text: string): ParsedCommand {
     return { type: 'flexible' };
   }
 
+  if (/^(childcare|kids)\s*$/i.test(trimmed)) {
+    return { type: 'childcare' };
+  }
+
   const outFromMatch = trimmed.match(/^out\s+from\s+(.+)$/i);
   if (outFromMatch) {
     const time = parseTimeToday(outFromMatch[1]!.trim());
@@ -120,6 +124,7 @@ const HELP_TEXT = `Available commands:
 *in* / *back* — Clear OOO, auto-reply off
 *out* / *off* — Set OOO, auto-reply on
 *flexible* / *flex* — Set flexible/slow-response message
+*childcare* / *kids* — Set childcare day message
 *out from 2pm* — Schedule OOO to start at a time
 *out until Thursday* — Set OOO with an end date
 *status* — Check current OOO state`;
@@ -158,6 +163,18 @@ async function handleFlexible(ctx: Context): Promise<void> {
     await ctx.reply('OOO set: Flexible. Auto-reply is on with flexible message.');
   } catch (err) {
     await ctx.reply(`Failed to set flexible OOO: ${formatError(err)}`);
+  }
+}
+
+async function handleChildcare(ctx: Context): Promise<void> {
+  try {
+    await enableVacation(auth, {
+      subject: config.messages.subject,
+      message: config.messages.childcare,
+    });
+    await ctx.reply('OOO set: Childcare. Auto-reply is on with childcare message.');
+  } catch (err) {
+    await ctx.reply(`Failed to set childcare OOO: ${formatError(err)}`);
   }
 }
 
@@ -243,6 +260,12 @@ export function registerHandlers(bot: Telegraf): void {
     await handleFlexible(ctx);
   });
 
+  bot.action('status_childcare', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('You selected: Childcare');
+    await handleChildcare(ctx);
+  });
+
   bot.action('cancel_schedule', async (ctx) => {
     await ctx.answerCbQuery();
     const result = cancelPendingSchedule();
@@ -266,6 +289,9 @@ export function registerHandlers(bot: Telegraf): void {
         break;
       case 'flexible':
         await handleFlexible(ctx);
+        break;
+      case 'childcare':
+        await handleChildcare(ctx);
         break;
       case 'status':
         await handleStatus(ctx);
