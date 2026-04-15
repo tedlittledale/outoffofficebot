@@ -6,9 +6,9 @@ import { morningKeyboard } from '../bot/keyboards.js';
 let task: cron.ScheduledTask | null = null;
 
 export function startMorningCron(bot: Telegraf): void {
-  // Weekdays at 7:30am in configured timezone
+  // Weekdays at 8:30am in configured timezone
   task = cron.schedule(
-    '30 7 * * 1-5',
+    '30 8 * * 1-5',
     async () => {
       try {
         await bot.telegram.sendMessage(
@@ -23,7 +23,7 @@ export function startMorningCron(bot: Telegraf): void {
     { timezone: config.timezone },
   );
 
-  console.log(`Morning cron scheduled: 07:30 ${config.timezone}, weekdays`);
+  console.log(`Morning cron scheduled: 08:30 ${config.timezone}, weekdays`);
 }
 
 export function stopMorningCron(): void {
