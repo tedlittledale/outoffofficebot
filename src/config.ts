@@ -25,12 +25,12 @@ export const config = {
     subject: process.env['OOO_SUBJECT'] ?? 'Out of Office',
     out:
       process.env['OOO_OUT_MESSAGE'] ??
-      `<p>Hi - I'm not working today. I'll get back to you on my next working day.</p><p>Ted</p>`,
+      `<p>Hi</p><p>I'm not working today. I'll get back to you on my next working day.</p><p>Ted</p>`,
     flexible:
       process.env['OOO_FLEXIBLE_MESSAGE'] ??
-      `<p>Hi - I'm working flexibly today and may be slower than usual to respond. I'll get back to you as soon as I can.</p><p>Ted</p>`,
+      `<p>Hi</p><p>I'm working flexibly today and may be slower than usual to respond. I'll get back to you as soon as I can.</p><p>Ted</p>`,
     childcare:
       process.env['OOO_CHILDCARE_MESSAGE'] ??
-      `<p>Hi - I'm looking after Dylan/Erin today. I'll be checking emails, but won't be working.</p><p>Ted</p>`,
+      `<p>Hi</p><p>I'm looking after Dylan/Erin today. I'll be checking emails, but won't be working.</p><p>Ted</p>`,
   },
 } as const;
