@@ -4,6 +4,7 @@ import { type Telegraf } from 'telegraf';
 import { type Auth } from 'googleapis';
 import { config } from '../config.js';
 import { enableVacation } from '../gmail/vacation.js';
+import { setSlackStatus } from '../slack/status.js';
 
 interface PendingJob {
   job: schedule.Job;
@@ -30,10 +31,13 @@ export function scheduleOutAt(
 
   const job = schedule.scheduleJob(jsDate, async () => {
     try {
-      await enableVacation(auth, {
-        subject: config.messages.subject,
-        message: config.messages.out,
-      });
+      await Promise.all([
+        enableVacation(auth, {
+          subject: config.messages.subject,
+          message: config.messages.out,
+        }),
+        setSlackStatus('out'),
+      ]);
       await bot.telegram.sendMessage(
         chatId,
         `OOO is now active (scheduled from earlier). Auto-reply is on.`,

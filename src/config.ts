@@ -21,6 +21,9 @@ export const config = {
   },
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
   port: Number(process.env['PORT'] ?? '8080'),
+  slack: process.env['SLACK_USER_TOKEN']
+    ? { token: process.env['SLACK_USER_TOKEN'] }
+    : undefined,
   messages: {
     subject: process.env['OOO_SUBJECT'] ?? 'Out of Office',
     out:

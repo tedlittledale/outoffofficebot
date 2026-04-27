@@ -10,6 +10,7 @@ import {
 } from '../gmail/vacation.js';
 import { cancelScheduleKeyboard } from './keyboards.js';
 import { scheduleOutAt, cancelPendingSchedule, getPendingSchedule } from '../scheduler/adhoc.js';
+import { setSlackStatus } from '../slack/status.js';
 
 const auth = createGmailAuth();
 
@@ -132,7 +133,10 @@ const HELP_TEXT = `Available commands:
 async function handleIn(ctx: Context): Promise<void> {
   try {
     const current = await getVacationStatus(auth);
-    await disableVacation(auth);
+    await Promise.all([
+      disableVacation(auth),
+      setSlackStatus('in'),
+    ]);
     const note = current.enabled ? '' : ' (was already off)';
     await ctx.reply(`OOO cleared. Auto-reply is off.${note}`);
   } catch (err) {
@@ -143,10 +147,13 @@ async function handleIn(ctx: Context): Promise<void> {
 async function handleOut(ctx: Context): Promise<void> {
   try {
     const current = await getVacationStatus(auth);
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.out,
-    });
+    await Promise.all([
+      enableVacation(auth, {
+        subject: config.messages.subject,
+        message: config.messages.out,
+      }),
+      setSlackStatus('out'),
+    ]);
     const note = current.enabled ? ' (was already on)' : '';
     await ctx.reply(`OOO set: Out. Auto-reply is on.${note}`);
   } catch (err) {
@@ -156,10 +163,13 @@ async function handleOut(ctx: Context): Promise<void> {
 
 async function handleFlexible(ctx: Context): Promise<void> {
   try {
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.flexible,
-    });
+    await Promise.all([
+      enableVacation(auth, {
+        subject: config.messages.subject,
+        message: config.messages.flexible,
+      }),
+      setSlackStatus('flexible'),
+    ]);
     await ctx.reply('OOO set: Flexible. Auto-reply is on with flexible message.');
   } catch (err) {
     await ctx.reply(`Failed to set flexible OOO: ${formatError(err)}`);
@@ -168,10 +178,13 @@ async function handleFlexible(ctx: Context): Promise<void> {
 
 async function handleChildcare(ctx: Context): Promise<void> {
   try {
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.childcare,
-    });
+    await Promise.all([
+      enableVacation(auth, {
+        subject: config.messages.subject,
+        message: config.messages.childcare,
+      }),
+      setSlackStatus('childcare'),
+    ]);
     await ctx.reply('OOO set: Childcare. Auto-reply is on with childcare message.');
   } catch (err) {
     await ctx.reply(`Failed to set childcare OOO: ${formatError(err)}`);
@@ -219,11 +232,14 @@ async function handleOutFrom(ctx: Context, bot: Telegraf, time: DateTime): Promi
 
 async function handleOutUntil(ctx: Context, endDate: DateTime): Promise<void> {
   try {
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.out,
-      endTime: endDate.toJSDate(),
-    });
+    await Promise.all([
+      enableVacation(auth, {
+        subject: config.messages.subject,
+        message: config.messages.out,
+        endTime: endDate.toJSDate(),
+      }),
+      setSlackStatus('out', endDate.toJSDate()),
+    ]);
     await ctx.reply(
       `OOO set: Out until ${endDate.toFormat('cccc d MMMM')} at ${endDate.toFormat('HH:mm')}. Auto-reply is on.`,
     );
