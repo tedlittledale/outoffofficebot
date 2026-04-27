@@ -72,11 +72,12 @@ npm run build && npm start
 | `in` / `back` | Clear OOO, auto-reply off |
 | `out` / `off` | Set OOO, auto-reply on |
 | `flexible` / `flex` | Set flexible/slow-response auto-reply |
+| `childcare` / `kids` | Set childcare day auto-reply |
 | `out from 2pm` | Schedule OOO to enable at that time |
 | `out until Thursday` | Set OOO with an end date |
 | `status` | Show current OOO state |
 
-The morning check-in is sent at 07:30 UK time on weekdays with inline buttons for In, Out, and Flexible.
+The morning check-in is sent at 08:30 UK time on weekdays with inline buttons for In, Out, Flexible, and Childcare.
 
 ## Notes
 
