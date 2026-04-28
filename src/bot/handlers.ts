@@ -10,8 +10,76 @@ import {
 } from '../gmail/vacation.js';
 import { cancelScheduleKeyboard } from './keyboards.js';
 import { scheduleOutAt, cancelPendingSchedule, getPendingSchedule } from '../scheduler/adhoc.js';
+import {
+  clearSlackStatus,
+  endSlackSnooze,
+  isSlackConfigured,
+  setSlackPresence,
+  setSlackSnooze,
+  setSlackStatus,
+} from '../slack/status.js';
 
 const auth = createGmailAuth();
+
+type SlackVariant = 'out' | 'flexible' | 'childcare';
+
+const AWAY_VARIANTS: ReadonlySet<SlackVariant> = new Set(['out', 'childcare']);
+
+function minutesUntil(end: DateTime): number {
+  const now = DateTime.now().setZone(config.timezone);
+  return Math.max(1, Math.ceil(end.diff(now, 'minutes').minutes));
+}
+
+function snoozeMinutes(endTime: DateTime | null): number {
+  // No explicit end: snooze until end of today (re-armed next morning by cron)
+  const target =
+    endTime ?? DateTime.now().setZone(config.timezone).endOf('day');
+  return minutesUntil(target);
+}
+
+async function applySlackStatus(
+  variant: SlackVariant,
+  endTime: DateTime | null = null,
+): Promise<string | null> {
+  if (!isSlackConfigured() || !config.slack) return null;
+  const { text, emoji } = config.slack[variant];
+  const isAway = AWAY_VARIANTS.has(variant);
+  const expirationSec = endTime ? Math.floor(endTime.toSeconds()) : 0;
+  try {
+    await setSlackStatus(text, emoji, expirationSec);
+    await setSlackPresence(isAway ? 'away' : 'auto');
+    if (isAway) {
+      await setSlackSnooze(snoozeMinutes(endTime));
+    } else {
+      await endSlackSnooze().catch(() => {
+        /* ignore "snooze_not_active" */
+      });
+    }
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function applySlackClear(): Promise<string | null> {
+  if (!isSlackConfigured()) return null;
+  try {
+    await clearSlackStatus();
+    await setSlackPresence('auto');
+    await endSlackSnooze().catch(() => {
+      /* ignore "snooze_not_active" */
+    });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+function slackSuffix(slackError: string | null): string {
+  if (!isSlackConfigured()) return '';
+  if (slackError) return `\n(Slack status update failed: ${slackError})`;
+  return '\nSlack status updated.';
+}
 
 interface ParsedCommand {
   type: 'in' | 'out' | 'flexible' | 'childcare' | 'status' | 'out_from' | 'out_until' | 'unknown';
@@ -133,8 +201,9 @@ async function handleIn(ctx: Context): Promise<void> {
   try {
     const current = await getVacationStatus(auth);
     await disableVacation(auth);
+    const slackError = await applySlackClear();
     const note = current.enabled ? '' : ' (was already off)';
-    await ctx.reply(`OOO cleared. Auto-reply is off.${note}`);
+    await ctx.reply(`OOO cleared. Auto-reply is off.${note}${slackSuffix(slackError)}`);
   } catch (err) {
     await ctx.reply(`Failed to clear OOO: ${formatError(err)}`);
   }
@@ -147,8 +216,9 @@ async function handleOut(ctx: Context): Promise<void> {
       subject: config.messages.subject,
       message: config.messages.out,
     });
+    const slackError = await applySlackStatus('out');
     const note = current.enabled ? ' (was already on)' : '';
-    await ctx.reply(`OOO set: Out. Auto-reply is on.${note}`);
+    await ctx.reply(`OOO set: Out. Auto-reply is on.${note}${slackSuffix(slackError)}`);
   } catch (err) {
     await ctx.reply(`Failed to set OOO: ${formatError(err)}`);
   }
@@ -160,7 +230,10 @@ async function handleFlexible(ctx: Context): Promise<void> {
       subject: config.messages.subject,
       message: config.messages.flexible,
     });
-    await ctx.reply('OOO set: Flexible. Auto-reply is on with flexible message.');
+    const slackError = await applySlackStatus('flexible');
+    await ctx.reply(
+      `OOO set: Flexible. Auto-reply is on with flexible message.${slackSuffix(slackError)}`,
+    );
   } catch (err) {
     await ctx.reply(`Failed to set flexible OOO: ${formatError(err)}`);
   }
@@ -172,7 +245,10 @@ async function handleChildcare(ctx: Context): Promise<void> {
       subject: config.messages.subject,
       message: config.messages.childcare,
     });
-    await ctx.reply('OOO set: Childcare. Auto-reply is on with childcare message.');
+    const slackError = await applySlackStatus('childcare');
+    await ctx.reply(
+      `OOO set: Childcare. Auto-reply is on with childcare message.${slackSuffix(slackError)}`,
+    );
   } catch (err) {
     await ctx.reply(`Failed to set childcare OOO: ${formatError(err)}`);
   }
@@ -224,8 +300,9 @@ async function handleOutUntil(ctx: Context, endDate: DateTime): Promise<void> {
       message: config.messages.out,
       endTime: endDate.toJSDate(),
     });
+    const slackError = await applySlackStatus('out', endDate);
     await ctx.reply(
-      `OOO set: Out until ${endDate.toFormat('cccc d MMMM')} at ${endDate.toFormat('HH:mm')}. Auto-reply is on.`,
+      `OOO set: Out until ${endDate.toFormat('cccc d MMMM')} at ${endDate.toFormat('HH:mm')}. Auto-reply is on.${slackSuffix(slackError)}`,
     );
   } catch (err) {
     await ctx.reply(`Failed to set OOO: ${formatError(err)}`);
