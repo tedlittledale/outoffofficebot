@@ -24,9 +24,10 @@ server.listen(config.port, () => {
   console.log(`Health check server listening on port ${config.port}`);
 });
 
-// Start bot (long polling)
+// Start bot (long polling). bot.launch() resolves only on shutdown.
+console.log('Bot polling started');
 bot.launch().then(() => {
-  console.log('Bot started');
+  console.log('Bot polling stopped');
 });
 
 // Graceful shutdown

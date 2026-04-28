@@ -4,6 +4,12 @@ import { type Telegraf } from 'telegraf';
 import { type Auth } from 'googleapis';
 import { config } from '../config.js';
 import { enableVacation } from '../gmail/vacation.js';
+import {
+  isSlackConfigured,
+  setSlackPresence,
+  setSlackSnooze,
+  setSlackStatus,
+} from '../slack/status.js';
 
 interface PendingJob {
   job: schedule.Job;
@@ -34,9 +40,28 @@ export function scheduleOutAt(
         subject: config.messages.subject,
         message: config.messages.out,
       });
+
+      let slackSuffix = '';
+      if (isSlackConfigured() && config.slack) {
+        try {
+          await setSlackStatus(config.slack.out.text, config.slack.out.emoji);
+          await setSlackPresence('away');
+          const now = DateTime.now().setZone(config.timezone);
+          const minutes = Math.max(
+            1,
+            Math.ceil(now.endOf('day').diff(now, 'minutes').minutes),
+          );
+          await setSlackSnooze(minutes);
+          slackSuffix = '\nSlack status updated.';
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          slackSuffix = `\n(Slack status update failed: ${errMsg})`;
+        }
+      }
+
       await bot.telegram.sendMessage(
         chatId,
-        `OOO is now active (scheduled from earlier). Auto-reply is on.`,
+        `OOO is now active (scheduled from earlier). Auto-reply is on.${slackSuffix}`,
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

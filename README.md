@@ -26,6 +26,8 @@ cp .env.example .env
 
 Fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GMAIL_ADDRESS`.
 
+To also update your Slack status alongside Gmail OOO, add `SLACK_USER_TOKEN` (a User OAuth token from your Slack app — see "Slack setup" below). Slack is optional: if `SLACK_USER_TOKEN` is unset, only Gmail is updated.
+
 ### 3. Google Cloud project setup
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
@@ -38,7 +40,27 @@ Fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `GOOGLE_CLIENT_ID`, `GOOGLE_CL
 
 > **Important:** If your OAuth consent screen is in "Testing" mode, refresh tokens expire after 7 days. To get persistent tokens, publish the app (it will still be restricted to your account).
 
-### 4. Authenticate with Gmail
+### 4. Slack setup (optional)
+
+If you want the bot to update your Slack status whenever it toggles your Gmail OOO:
+
+1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps) (or use your existing one)
+2. Under **OAuth & Permissions**, add the **User Token Scope** `users.profile:write`
+3. Install the app to your workspace
+4. Copy the **User OAuth Token** (starts with `xoxp-`) into `.env` as `SLACK_USER_TOKEN`
+
+Optional overrides for status text/emoji (defaults shown):
+
+```
+SLACK_STATUS_OUT_TEXT="Out of office"
+SLACK_STATUS_OUT_EMOJI=":palm_tree:"
+SLACK_STATUS_FLEXIBLE_TEXT="Working flexibly — slower to respond"
+SLACK_STATUS_FLEXIBLE_EMOJI=":turtle:"
+```
+
+When you send `out until <date>`, the Slack status expiration is set to match the Gmail end time. When you send `in`/`back`, the Slack status is cleared.
+
+### 5. Authenticate with Gmail
 
 ```bash
 npm run auth-setup
@@ -46,7 +68,7 @@ npm run auth-setup
 
 This opens your browser for Google OAuth consent. After authorising, the script prints a refresh token — paste it into `.env` as `GOOGLE_REFRESH_TOKEN`.
 
-### 5. Run
+### 6. Run
 
 ```bash
 # Development (with hot reload)

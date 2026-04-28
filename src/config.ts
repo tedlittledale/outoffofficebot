@@ -8,6 +8,8 @@ function required(key: string): string {
   return value;
 }
 
+const slackUserToken = process.env['SLACK_USER_TOKEN'];
+
 export const config = {
   telegram: {
     botToken: required('TELEGRAM_BOT_TOKEN'),
@@ -19,6 +21,30 @@ export const config = {
     refreshToken: required('GOOGLE_REFRESH_TOKEN'),
     address: required('GMAIL_ADDRESS'),
   },
+  slack: slackUserToken
+    ? {
+        userToken: slackUserToken,
+        out: {
+          text:
+            process.env['SLACK_STATUS_OUT_TEXT'] ??
+            'Not working today — back next working day',
+          emoji: process.env['SLACK_STATUS_OUT_EMOJI'] ?? ':palm_tree:',
+        },
+        flexible: {
+          text:
+            process.env['SLACK_STATUS_FLEXIBLE_TEXT'] ??
+            'Working flexibly today — slower to respond than usual',
+          emoji: process.env['SLACK_STATUS_FLEXIBLE_EMOJI'] ?? ':turtle:',
+        },
+        childcare: {
+          text:
+            process.env['SLACK_STATUS_CHILDCARE_TEXT'] ??
+            'On childcare today — checking email but not working',
+          emoji:
+            process.env['SLACK_STATUS_CHILDCARE_EMOJI'] ?? ':wave:',
+        },
+      }
+    : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
   port: Number(process.env['PORT'] ?? '8080'),
   messages: {
