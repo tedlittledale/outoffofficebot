@@ -10,8 +10,9 @@
     "rootDir": ".",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "declaration": true
+    "declaration": true,
+    "plugins": [{ "name": "workflow" }]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "workflows/**/*.ts", "nitro.config.ts"],
+  "exclude": ["node_modules", "dist", ".output", ".nitro"]
 }

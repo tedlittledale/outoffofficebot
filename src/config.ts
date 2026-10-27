@@ -14,7 +14,9 @@ export const config = {
   telegram: {
     botToken: required('TELEGRAM_BOT_TOKEN'),
     allowedChatId: Number(required('TELEGRAM_CHAT_ID')),
+    webhookSecret: process.env['TELEGRAM_WEBHOOK_SECRET'],
   },
+  cronSecret: process.env['CRON_SECRET'],
   gmail: {
     clientId: required('GOOGLE_CLIENT_ID'),
     clientSecret: required('GOOGLE_CLIENT_SECRET'),
@@ -46,7 +48,6 @@ export const config = {
       }
     : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
-  port: Number(process.env['PORT'] ?? '8080'),
   messages: {
     subject: process.env['OOO_SUBJECT'] ?? 'Out of Office',
     out:
