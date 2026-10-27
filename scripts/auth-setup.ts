@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { exec } from 'node:child_process';
@@ -16,7 +16,7 @@ if (!clientId || !clientSecret) {
   process.exit(1);
 }
 
-const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, REDIRECT_URI);
+const oauth2Client = new OAuth2Client(clientId, clientSecret, REDIRECT_URI);
 
 const authUrl = oauth2Client.generateAuthUrl({
   access_type: 'offline',

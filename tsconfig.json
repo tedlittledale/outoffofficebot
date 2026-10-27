@@ -6,13 +6,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": ".",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "declaration": true,
+    "noEmit": true,
     "plugins": [{ "name": "workflow" }]
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "workflows/**/*.ts", "nitro.config.ts"],
-  "exclude": ["node_modules", "dist", ".output", ".nitro"]
+  "exclude": ["node_modules", ".output", ".nitro"]
 }

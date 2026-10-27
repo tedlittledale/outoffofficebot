@@ -1,7 +1,7 @@
 import schedule from 'node-schedule';
 import { DateTime } from 'luxon';
 import { type Telegraf } from 'telegraf';
-import { type Auth } from 'googleapis';
+import { type OAuth2Client } from 'google-auth-library';
 import { config } from '../config.js';
 import { enableVacation } from '../gmail/vacation.js';
 import {
@@ -23,7 +23,7 @@ export function scheduleOutAt(
   bot: Telegraf,
   time: DateTime,
   chatId: number,
-  auth: Auth.OAuth2Client,
+  auth: OAuth2Client,
 ): void {
   // Cancel any existing pending job
   if (pendingJob) {

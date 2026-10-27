@@ -1,4 +1,5 @@
-import { google, type Auth } from 'googleapis';
+import { gmail as gmailApi } from '@googleapis/gmail';
+import { type OAuth2Client } from 'google-auth-library';
 import { config } from '../config.js';
 
 export interface VacationStatus {
@@ -20,8 +21,8 @@ export class GmailApiError extends Error {
   }
 }
 
-function gmail(auth: Auth.OAuth2Client) {
-  return google.gmail({ version: 'v1', auth });
+function gmail(auth: OAuth2Client) {
+  return gmailApi({ version: 'v1', auth });
 }
 
 function wrapError(err: unknown): never {
@@ -36,7 +37,7 @@ function wrapError(err: unknown): never {
   throw err;
 }
 
-export async function getVacationStatus(auth: Auth.OAuth2Client): Promise<VacationStatus> {
+export async function getVacationStatus(auth: OAuth2Client): Promise<VacationStatus> {
   try {
     const res = await gmail(auth).users.settings.getVacation({ userId: 'me' });
     const v = res.data;
@@ -53,7 +54,7 @@ export async function getVacationStatus(auth: Auth.OAuth2Client): Promise<Vacati
 }
 
 export async function enableVacation(
-  auth: Auth.OAuth2Client,
+  auth: OAuth2Client,
   options?: {
     subject?: string;
     message?: string;
@@ -90,7 +91,7 @@ export async function enableVacation(
   }
 }
 
-export async function disableVacation(auth: Auth.OAuth2Client): Promise<VacationStatus> {
+export async function disableVacation(auth: OAuth2Client): Promise<VacationStatus> {
   try {
     const res = await gmail(auth).users.settings.updateVacation({
       userId: 'me',

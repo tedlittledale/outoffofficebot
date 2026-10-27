@@ -48,6 +48,7 @@ export const config = {
       }
     : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
+  morningCheckinHour: Number(process.env['MORNING_CHECKIN_HOUR'] ?? '8'),
   messages: {
     subject: process.env['OOO_SUBJECT'] ?? 'Out of Office',
     out:
