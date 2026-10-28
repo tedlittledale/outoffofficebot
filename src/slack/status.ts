@@ -71,18 +71,39 @@ export function isSlackConfigured(): boolean {
   return config.slack !== null;
 }
 
+// Slack wants a ":shortcode:". Env values often arrive as `"turtle"` or
+// `":turtle:"` (with literal quotes copied from a .env example), so tidy them up.
+export function normalizeEmoji(emoji: string): string {
+  const name = emoji.trim().replace(/^["']+|["']+$/g, '').trim().replace(/^:+|:+$/g, '');
+  return name ? `:${name}:` : '';
+}
+
 export async function setSlackStatus(
   text: string,
   emoji: string,
   expirationSec = 0,
 ): Promise<void> {
-  await callSlack('users.profile.set', {
-    profile: {
-      status_text: text,
-      status_emoji: emoji,
-      status_expiration: expirationSec,
-    },
-  });
+  const profile = {
+    status_text: text,
+    status_emoji: normalizeEmoji(emoji),
+    status_expiration: expirationSec,
+  };
+  try {
+    await callSlack('users.profile.set', { profile });
+  } catch (err) {
+    // An unknown emoji shouldn't stop the status text (and the presence/DnD
+    // calls after it) from being applied, so retry without one.
+    if (
+      err instanceof SlackApiError &&
+      err.slackError === 'profile_status_set_failed_not_valid_emoji' &&
+      profile.status_emoji
+    ) {
+      console.warn(`Slack rejected status emoji ${profile.status_emoji}; setting status without it`);
+      await callSlack('users.profile.set', { profile: { ...profile, status_emoji: '' } });
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function clearSlackStatus(): Promise<void> {
