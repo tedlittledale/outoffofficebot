@@ -98,7 +98,7 @@ npm run build && npm start
 | `out until Thursday` | Set OOO with an end date |
 | `status` | Show current OOO state |
 
-The morning check-in is sent at 07:30 UK time on weekdays with inline buttons for In, Out, and Flexible.
+The morning check-in is sent at 07:30 UK time on weekdays with inline buttons for In, Out, and Flexible. Just before it's sent, the bot clears yesterday's Gmail auto-reply and Slack status/presence/DnD, so if you don't reply you're left at the default. An `out until <date>` that hasn't ended yet is kept.
 
 ## Notes
 
