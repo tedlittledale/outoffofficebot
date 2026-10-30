@@ -279,6 +279,23 @@ async function handleStatus(ctx: Context): Promise<void> {
   }
 }
 
+// Called before the morning check-in so that, if no answer comes, Gmail and
+// Slack sit at their defaults rather than carrying over yesterday's status.
+// An "out until <date>" that hasn't ended yet is left in place.
+export async function resetForMorning(): Promise<string | null> {
+  try {
+    const current = await getVacationStatus(auth);
+    if (current.enabled && current.endTime && current.endTime > Date.now()) {
+      return null;
+    }
+    if (current.enabled) await disableVacation(auth);
+  } catch (err) {
+    return `Failed to clear Gmail auto-reply: ${formatError(err)}`;
+  }
+  const slackError = await applySlackClear();
+  return slackError ? `Slack status clear failed: ${slackError}` : null;
+}
+
 async function handleOutFrom(ctx: Context, bot: Telegraf, time: DateTime): Promise<void> {
   const now = DateTime.now().setZone(config.timezone);
   if (time <= now) {
