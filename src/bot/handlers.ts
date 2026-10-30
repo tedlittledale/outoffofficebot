@@ -21,9 +21,9 @@ import {
 
 const auth = createGmailAuth();
 
-type SlackVariant = 'out' | 'flexible' | 'childcare';
+type SlackVariant = 'out' | 'flexible' | 'childcare' | 'holiday';
 
-const AWAY_VARIANTS: ReadonlySet<SlackVariant> = new Set(['out', 'childcare']);
+const AWAY_VARIANTS: ReadonlySet<SlackVariant> = new Set(['out', 'childcare', 'holiday']);
 
 function minutesUntil(end: DateTime): number {
   const now = DateTime.now().setZone(config.timezone);
@@ -40,9 +40,11 @@ function snoozeMinutes(endTime: DateTime | null): number {
 async function applySlackStatus(
   variant: SlackVariant,
   endTime: DateTime | null = null,
+  textSuffix = '',
 ): Promise<string | null> {
   if (!isSlackConfigured() || !config.slack) return null;
-  const { text, emoji } = config.slack[variant];
+  const { emoji } = config.slack[variant];
+  const text = config.slack[variant].text + textSuffix;
   const isAway = AWAY_VARIANTS.has(variant);
   const expirationSec = endTime ? Math.floor(endTime.toSeconds()) : 0;
   try {
@@ -139,6 +141,60 @@ function parseFutureDate(dateStr: string): DateTime | null {
   return null;
 }
 
+const RETURN_DATE_FORMATS = [
+  'd MMM', 'd MMMM', 'MMM d', 'MMMM d',
+  'd MMM yyyy', 'd MMMM yyyy', 'MMM d yyyy', 'MMMM d yyyy',
+  'd/M', 'd/M/yyyy', 'd/M/yy', 'yyyy-MM-dd',
+];
+
+// The day you're back at work, at midnight. Accepts the same words as
+// parseFutureDate ("friday", "next week") plus dates like "17 Nov" or "17/11".
+export function parseReturnDate(dateStr: string): DateTime | null {
+  const tz = config.timezone;
+  const today = DateTime.now().setZone(tz).startOf('day');
+
+  const relative = parseFutureDate(dateStr);
+  if (relative) return relative.startOf('day');
+
+  const cleaned = dateStr.trim().replace(/(\d+)(st|nd|rd|th)\b/i, '$1').replace(/,/g, '');
+  for (const format of RETURN_DATE_FORMATS) {
+    let date = DateTime.fromFormat(cleaned, format, { zone: tz, locale: 'en-GB' });
+    if (!date.isValid) continue;
+    if (!format.includes('y') && date <= today) date = date.plus({ years: 1 });
+    return date > today ? date : null;
+  }
+  return null;
+}
+
+// Splits "/holiday 17 Nov Skiing — back on the 17th" into the return date and
+// an optional custom message. The date is the longest leading run of up to
+// three words that parses.
+export function parseHolidayArgs(
+  args: string,
+): { back: DateTime; message: string | null } | null {
+  const trimmed = args.trim();
+  for (let words = 3; words >= 1; words--) {
+    const match = trimmed.match(
+      new RegExp(`^(\\S+(?:[ \\t]+\\S+){${words - 1}})(?:\\s+([\\s\\S]*))?$`),
+    );
+    if (!match) continue;
+    const back = parseReturnDate(match[1]!);
+    if (back) return { back, message: match[2]?.trim() || null };
+  }
+  return null;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function plainTextToHtml(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .map((para) => `<p>${escapeHtml(para.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
 export function parseCommand(text: string): ParsedCommand {
   const trimmed = text.trim();
 
@@ -195,7 +251,18 @@ const HELP_TEXT = `Available commands:
 *childcare* / *kids* — Set childcare day message
 *out from 2pm* — Schedule OOO to start at a time
 *out until Thursday* — Set OOO with an end date
-*status* — Check current OOO state`;
+*status* — Check current OOO state
+*/holiday 17 Nov* — On holiday, back on 17 Nov (no morning check-ins until then)
+*/holiday 17 Nov Your own message* — Same, with your own auto-reply text`;
+
+const HOLIDAY_USAGE = `Usage: */holiday <day you're back> [your own auto-reply]*
+
+Examples:
+/holiday 17 Nov
+/holiday monday
+/holiday 17/11 Away skiing. For anything urgent, contact Sam.
+
+Without your own text, the default holiday auto-reply is used.`;
 
 async function handleIn(ctx: Context): Promise<void> {
   try {
@@ -279,21 +346,55 @@ async function handleStatus(ctx: Context): Promise<void> {
   }
 }
 
+async function handleHoliday(ctx: Context, args: string): Promise<void> {
+  const parsed = parseHolidayArgs(args);
+  if (!parsed) {
+    await ctx.reply(HOLIDAY_USAGE, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  const { back, message } = parsed;
+  const backLong = back.toFormat('cccc d MMMM');
+  try {
+    await enableVacation(auth, {
+      subject: config.messages.subject,
+      message: message
+        ? plainTextToHtml(message)
+        : config.messages.holiday.replaceAll('{back}', backLong),
+      endTime: back.toJSDate(),
+    });
+    cancelPendingSchedule();
+    const slackError = await applySlackStatus(
+      'holiday',
+      back,
+      ` — back ${back.toFormat('ccc d MMM')}`,
+    );
+    const which = message ? 'your own message' : 'the default holiday message';
+    await ctx.reply(
+      `Holiday set until ${backLong}. Auto-reply is on with ${which}. No morning check-ins until you're back.${slackSuffix(slackError)}`,
+    );
+  } catch (err) {
+    await ctx.reply(`Failed to set holiday: ${formatError(err)}`);
+  }
+}
+
 // Called before the morning check-in so that, if no answer comes, Gmail and
 // Slack sit at their defaults rather than carrying over yesterday's status.
-// An "out until <date>" that hasn't ended yet is left in place.
-export async function resetForMorning(): Promise<string | null> {
+// A holiday or "out until <date>" that hasn't ended yet is left in place, and
+// `away` says whether it runs past today (so there's no need to ask).
+export async function resetForMorning(): Promise<{ away: boolean; error: string | null }> {
   try {
     const current = await getVacationStatus(auth);
     if (current.enabled && current.endTime && current.endTime > Date.now()) {
-      return null;
+      const endOfToday = DateTime.now().setZone(config.timezone).endOf('day');
+      return { away: current.endTime > endOfToday.toMillis(), error: null };
     }
     if (current.enabled) await disableVacation(auth);
   } catch (err) {
-    return `Failed to clear Gmail auto-reply: ${formatError(err)}`;
+    return { away: false, error: `Failed to clear Gmail auto-reply: ${formatError(err)}` };
   }
   const slackError = await applySlackClear();
-  return slackError ? `Slack status clear failed: ${slackError}` : null;
+  return { away: false, error: slackError ? `Slack status clear failed: ${slackError}` : null };
 }
 
 async function handleOutFrom(ctx: Context, bot: Telegraf, time: DateTime): Promise<void> {
@@ -368,6 +469,11 @@ export function registerHandlers(bot: Telegraf): void {
     } else {
       await ctx.editMessageText('No pending schedule to cancel.');
     }
+  });
+
+  // Registered before the text handler, which would otherwise swallow it
+  bot.command('holiday', async (ctx) => {
+    await handleHoliday(ctx, ctx.payload);
   });
 
   // Text message handler

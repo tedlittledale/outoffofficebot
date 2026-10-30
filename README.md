@@ -56,7 +56,11 @@ SLACK_STATUS_OUT_TEXT="Out of office"
 SLACK_STATUS_OUT_EMOJI=":palm_tree:"
 SLACK_STATUS_FLEXIBLE_TEXT="Working flexibly — slower to respond"
 SLACK_STATUS_FLEXIBLE_EMOJI=":turtle:"
+SLACK_STATUS_HOLIDAY_TEXT="On holiday"
+SLACK_STATUS_HOLIDAY_EMOJI=":desert_island:"
 ```
+
+The default holiday auto-reply can be changed with `OOO_HOLIDAY_MESSAGE` (HTML; `{back}` is replaced with the return date).
 
 When you send `out until <date>`, the Slack status expiration is set to match the Gmail end time. When you send `in`/`back`, the Slack status is cleared.
 
@@ -97,8 +101,10 @@ npm run build && npm start
 | `out from 2pm` | Schedule OOO to enable at that time |
 | `out until Thursday` | Set OOO with an end date |
 | `status` | Show current OOO state |
+| `/holiday 17 Nov` | On holiday until the day you're back (17 Nov): auto-reply on, Slack status set, no morning check-ins until then |
+| `/holiday 17 Nov Away skiing, contact Sam` | Same, with your own auto-reply text instead of the default |
 
-The morning check-in is sent at 07:30 UK time on weekdays with inline buttons for In, Out, and Flexible. Just before it's sent, the bot clears yesterday's Gmail auto-reply and Slack status/presence/DnD, so if you don't reply you're left at the default. An `out until <date>` that hasn't ended yet is kept.
+The morning check-in is sent at 07:30 UK time on weekdays with inline buttons for In, Out, and Flexible. Just before it's sent, the bot clears yesterday's Gmail auto-reply and Slack status/presence/DnD, so if you don't reply you're left at the default. A holiday or `out until <date>` that hasn't ended yet is kept, and while it runs past today the check-in isn't sent at all.
 
 ## Notes
 

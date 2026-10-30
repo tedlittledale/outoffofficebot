@@ -43,6 +43,11 @@ export const config = {
           emoji:
             process.env['SLACK_STATUS_CHILDCARE_EMOJI'] ?? ':wave:',
         },
+        holiday: {
+          text: process.env['SLACK_STATUS_HOLIDAY_TEXT'] ?? 'On holiday',
+          emoji:
+            process.env['SLACK_STATUS_HOLIDAY_EMOJI'] ?? ':desert_island:',
+        },
       }
     : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
@@ -58,5 +63,9 @@ export const config = {
     childcare:
       process.env['OOO_CHILDCARE_MESSAGE'] ??
       `<p>Hi</p><p>I'm looking after Dylan/Erin today. I'll be checking emails, but won't be working.</p><p>Ted</p>`,
+    // {back} is replaced with the return date, e.g. "Monday 17 November"
+    holiday:
+      process.env['OOO_HOLIDAY_MESSAGE'] ??
+      `<p>Hi</p><p>I'm on holiday and back on {back}. I'll reply to your email when I'm back.</p><p>Ted</p>`,
   },
 } as const;
