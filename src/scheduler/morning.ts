@@ -11,12 +11,13 @@ export function startMorningCron(bot: Telegraf): void {
   task = cron.schedule(
     '30 8 * * 1-5',
     async () => {
-      const resetError = await resetForMorning();
-      if (resetError) console.error('Morning reset failed:', resetError);
+      const { away, error } = await resetForMorning();
+      if (error) console.error('Morning reset failed:', error);
+      if (away) return;
       try {
         await bot.telegram.sendMessage(
           config.telegram.allowedChatId,
-          `Good morning! What's your status today?${resetError ? `\n(${resetError})` : ''}`,
+          `Good morning! What's your status today?${error ? `\n(${error})` : ''}`,
           morningKeyboard,
         );
       } catch (err) {

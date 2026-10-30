@@ -9,6 +9,13 @@ const bot = new Telegraf(config.telegram.botToken);
 registerHandlers(bot);
 startMorningCron(bot);
 
+// Shows /holiday in Telegram's command menu
+bot.telegram
+  .setMyCommands([
+    { command: 'holiday', description: "On holiday until the day you're back, e.g. /holiday 17 Nov" },
+  ])
+  .catch((err) => console.error('Failed to register bot commands:', err));
+
 // Health check HTTP server
 const server = createServer((_req, res) => {
   if (_req.url === '/health' && _req.method === 'GET') {
