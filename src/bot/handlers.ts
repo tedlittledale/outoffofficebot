@@ -9,7 +9,12 @@ import {
   GmailApiError,
 } from '../gmail/vacation.js';
 import { cancelScheduleKeyboard } from './keyboards.js';
-import { scheduleOutAt, cancelPendingSchedule, getPendingSchedule } from '../scheduler/adhoc.js';
+import {
+  scheduleOutAt,
+  scheduleChange,
+  cancelPendingSchedule,
+  getPendingSchedule,
+} from '../scheduler/adhoc.js';
 import {
   clearSlackStatus,
   endSlackSnooze,
@@ -84,7 +89,17 @@ function slackSuffix(slackError: string | null): string {
 }
 
 interface ParsedCommand {
-  type: 'in' | 'out' | 'flexible' | 'childcare' | 'status' | 'out_from' | 'out_until' | 'unknown';
+  type:
+    | 'in'
+    | 'out'
+    | 'flexible'
+    | 'childcare'
+    | 'morning'
+    | 'afternoon'
+    | 'status'
+    | 'out_from'
+    | 'out_until'
+    | 'unknown';
   time?: DateTime;
 }
 
@@ -214,6 +229,14 @@ export function parseCommand(text: string): ParsedCommand {
     return { type: 'childcare' };
   }
 
+  if (/^(working\s+)?(morning|am)\s*$/i.test(trimmed)) {
+    return { type: 'morning' };
+  }
+
+  if (/^(working\s+)?(afternoon|pm)\s*$/i.test(trimmed)) {
+    return { type: 'afternoon' };
+  }
+
   const outFromMatch = trimmed.match(/^out\s+from\s+(.+)$/i);
   if (outFromMatch) {
     const time = parseTimeToday(outFromMatch[1]!.trim());
@@ -249,6 +272,8 @@ const HELP_TEXT = `Available commands:
 *out* / *off* — Set OOO, auto-reply on
 *flexible* / *flex* — Set flexible/slow-response message
 *childcare* / *kids* — Set childcare day message
+*morning* / *am* — Working this morning, flexible message from ${config.halfDaySwitchTime}
+*afternoon* / *pm* — Flexible message this morning, working from ${config.halfDaySwitchTime}
 *out from 2pm* — Schedule OOO to start at a time
 *out until Thursday* — Set OOO with an end date
 *status* — Check current OOO state
@@ -264,13 +289,27 @@ Examples:
 
 Without your own text, the default holiday auto-reply is used.`;
 
+// Each returns the reply to send; Gmail failures throw.
+async function clearOoo(): Promise<string> {
+  const current = await getVacationStatus(auth);
+  await disableVacation(auth);
+  const slackError = await applySlackClear();
+  const note = current.enabled ? '' : ' (was already off)';
+  return `OOO cleared. Auto-reply is off.${note}${slackSuffix(slackError)}`;
+}
+
+async function setFlexible(): Promise<string> {
+  await enableVacation(auth, {
+    subject: config.messages.subject,
+    message: config.messages.flexible,
+  });
+  const slackError = await applySlackStatus('flexible');
+  return `OOO set: Flexible. Auto-reply is on with flexible message.${slackSuffix(slackError)}`;
+}
+
 async function handleIn(ctx: Context): Promise<void> {
   try {
-    const current = await getVacationStatus(auth);
-    await disableVacation(auth);
-    const slackError = await applySlackClear();
-    const note = current.enabled ? '' : ' (was already off)';
-    await ctx.reply(`OOO cleared. Auto-reply is off.${note}${slackSuffix(slackError)}`);
+    await ctx.reply(await clearOoo());
   } catch (err) {
     await ctx.reply(`Failed to clear OOO: ${formatError(err)}`);
   }
@@ -293,14 +332,7 @@ async function handleOut(ctx: Context): Promise<void> {
 
 async function handleFlexible(ctx: Context): Promise<void> {
   try {
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.flexible,
-    });
-    const slackError = await applySlackStatus('flexible');
-    await ctx.reply(
-      `OOO set: Flexible. Auto-reply is on with flexible message.${slackSuffix(slackError)}`,
-    );
+    await ctx.reply(await setFlexible());
   } catch (err) {
     await ctx.reply(`Failed to set flexible OOO: ${formatError(err)}`);
   }
@@ -321,6 +353,44 @@ async function handleChildcare(ctx: Context): Promise<void> {
   }
 }
 
+// Working one half of the day: clear OOO for that half and use the flexible
+// message for the other, switching over at config.halfDaySwitchTime.
+async function handleHalfDay(
+  ctx: Context,
+  bot: Telegraf,
+  working: 'morning' | 'afternoon',
+): Promise<void> {
+  const switchAt =
+    parseTimeToday(config.halfDaySwitchTime) ?? parseTimeToday('13:00')!;
+  const switchLabel = switchAt.toFormat('HH:mm');
+  const [first, second] =
+    working === 'morning' ? [clearOoo, setFlexible] : [setFlexible, clearOoo];
+  const secondLabel =
+    working === 'morning' ? 'Flexible message on' : 'OOO cleared';
+
+  try {
+    if (DateTime.now().setZone(config.timezone) >= switchAt) {
+      await ctx.reply(`It's already past ${switchLabel}.\n${await second()}`);
+      return;
+    }
+
+    const reply = await first();
+    scheduleChange(
+      bot,
+      switchAt,
+      config.telegram.allowedChatId,
+      `${secondLabel} at ${switchLabel}`,
+      async () => `It's ${switchLabel}. ${await second()}`,
+    );
+    await ctx.reply(
+      `Working this ${working}. ${reply}\n\n${secondLabel} at ${switchLabel}.`,
+      cancelScheduleKeyboard,
+    );
+  } catch (err) {
+    await ctx.reply(`Failed to set half day: ${formatError(err)}`);
+  }
+}
+
 async function handleStatus(ctx: Context): Promise<void> {
   try {
     const status = await getVacationStatus(auth);
@@ -337,7 +407,7 @@ async function handleStatus(ctx: Context): Promise<void> {
 
     if (pending.scheduled && pending.time) {
       const schedTime = DateTime.fromJSDate(pending.time).setZone(config.timezone);
-      reply += `\n\nPending: ${pending.description} at ${schedTime.toFormat('HH:mm')}`;
+      reply += `\n\nPending: ${pending.description}`;
     }
 
     await ctx.reply(reply, { parse_mode: 'Markdown' });
@@ -461,6 +531,18 @@ export function registerHandlers(bot: Telegraf): void {
     await handleChildcare(ctx);
   });
 
+  bot.action('status_morning', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('You selected: Working morning');
+    await handleHalfDay(ctx, bot, 'morning');
+  });
+
+  bot.action('status_afternoon', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('You selected: Working afternoon');
+    await handleHalfDay(ctx, bot, 'afternoon');
+  });
+
   bot.action('cancel_schedule', async (ctx) => {
     await ctx.answerCbQuery();
     const result = cancelPendingSchedule();
@@ -492,6 +574,10 @@ export function registerHandlers(bot: Telegraf): void {
         break;
       case 'childcare':
         await handleChildcare(ctx);
+        break;
+      case 'morning':
+      case 'afternoon':
+        await handleHalfDay(ctx, bot, command.type);
         break;
       case 'status':
         await handleStatus(ctx);

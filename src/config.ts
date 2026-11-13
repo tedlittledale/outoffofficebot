@@ -52,6 +52,8 @@ export const config = {
     : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
   port: Number(process.env['PORT'] ?? '8080'),
+  // When a "working morning/afternoon" day switches over, e.g. "13:00"
+  halfDaySwitchTime: process.env['HALF_DAY_SWITCH_TIME'] ?? '13:00',
   messages: {
     subject: process.env['OOO_SUBJECT'] ?? 'Out of Office',
     out:

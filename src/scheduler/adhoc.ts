@@ -19,11 +19,14 @@ interface PendingJob {
 
 let pendingJob: PendingJob | null = null;
 
-export function scheduleOutAt(
+// Runs `change` at `time` and sends its result to the chat. Only one change
+// can be pending at once; scheduling another replaces it.
+export function scheduleChange(
   bot: Telegraf,
   time: DateTime,
   chatId: number,
-  auth: Auth.OAuth2Client,
+  description: string,
+  change: () => Promise<string>,
 ): void {
   // Cancel any existing pending job
   if (pendingJob) {
@@ -32,48 +35,51 @@ export function scheduleOutAt(
   }
 
   const jsDate = time.toJSDate();
-  const description = `OOO enable at ${time.toFormat('HH:mm')}`;
-
   const job = schedule.scheduleJob(jsDate, async () => {
+    pendingJob = null;
     try {
-      await enableVacation(auth, {
-        subject: config.messages.subject,
-        message: config.messages.out,
-      });
-
-      let slackSuffix = '';
-      if (isSlackConfigured() && config.slack) {
-        try {
-          await setSlackStatus(config.slack.out.text, config.slack.out.emoji);
-          await setSlackPresence('away');
-          const now = DateTime.now().setZone(config.timezone);
-          const minutes = Math.max(
-            1,
-            Math.ceil(now.endOf('day').diff(now, 'minutes').minutes),
-          );
-          await setSlackSnooze(minutes);
-          slackSuffix = '\nSlack status updated.';
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          slackSuffix = `\n(Slack status update failed: ${errMsg})`;
-        }
-      }
-
-      await bot.telegram.sendMessage(
-        chatId,
-        `OOO is now active (scheduled from earlier). Auto-reply is on.${slackSuffix}`,
-      );
+      await bot.telegram.sendMessage(chatId, await change());
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      await bot.telegram.sendMessage(
-        chatId,
-        `Failed to enable scheduled OOO: ${errMsg}`,
-      );
+      await bot.telegram.sendMessage(chatId, `Failed: ${description}: ${errMsg}`);
     }
-    pendingJob = null;
   });
 
   pendingJob = { job, description, time: jsDate };
+}
+
+export function scheduleOutAt(
+  bot: Telegraf,
+  time: DateTime,
+  chatId: number,
+  auth: Auth.OAuth2Client,
+): void {
+  scheduleChange(bot, time, chatId, `OOO enable at ${time.toFormat('HH:mm')}`, async () => {
+    await enableVacation(auth, {
+      subject: config.messages.subject,
+      message: config.messages.out,
+    });
+
+    let slackSuffix = '';
+    if (isSlackConfigured() && config.slack) {
+      try {
+        await setSlackStatus(config.slack.out.text, config.slack.out.emoji);
+        await setSlackPresence('away');
+        const now = DateTime.now().setZone(config.timezone);
+        const minutes = Math.max(
+          1,
+          Math.ceil(now.endOf('day').diff(now, 'minutes').minutes),
+        );
+        await setSlackSnooze(minutes);
+        slackSuffix = '\nSlack status updated.';
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        slackSuffix = `\n(Slack status update failed: ${errMsg})`;
+      }
+    }
+
+    return `OOO is now active (scheduled from earlier). Auto-reply is on.${slackSuffix}`;
+  });
 }
 
 export function cancelPendingSchedule(): { cancelled: boolean; description: string | null } {
