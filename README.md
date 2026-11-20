@@ -72,24 +72,39 @@ npm run auth-setup
 
 This opens your browser for Google OAuth consent. After authorising, the script prints a refresh token — paste it into `.env` as `GOOGLE_REFRESH_TOKEN`.
 
-### 6. Run
+### 6. Run locally
 
 ```bash
-# Development (with hot reload)
+# Nitro dev server (webhook, cron and workflow routes on http://localhost:3000)
 npm run dev
 
-# Production
-npm run build && npm start
+# Or long-poll Telegram directly, for testing in the chat without a public URL.
+# "out from <time>" and half-day switches aren't available in this mode,
+# since workflows need the Nitro server.
+npm run dev:poll
 ```
 
-## Deploy to Railway
+> **Don't poll with the production bot token.** Starting to poll deletes the bot's webhook, which silently stops the deployed bot receiving any messages or button taps. `dev:poll` refuses to start while a webhook is set; use a separate test bot from @BotFather for local polling. If the webhook does get deleted, run `npm run telegram:setup` (below) to restore it.
 
-1. Push this repo to GitHub
-2. Create a new project on [Railway](https://railway.app)
-3. Connect the GitHub repo
-4. Add all environment variables from `.env` in the Railway dashboard
-5. Railway will detect the `Procfile` and run the worker process
-6. The health check endpoint is available at `GET /health` on the configured `PORT`
+## Deploy to Vercel
+
+The app is a Hono server built by Nitro (`nitro.config.ts`) with the Workflow SDK module. It deploys to Vercel on push to `main`.
+
+Routes:
+
+- `POST /api/telegram`: Telegram webhook, authenticated with `TELEGRAM_WEBHOOK_SECRET`
+- `GET /api/cron/morning`: Vercel Cron (`vercel.json`) runs it hourly on weekdays. It sends the check-in only when the local hour in `OOO_TIMEZONE` equals `MORNING_CHECKIN_HOUR` (default `8`), so DST is handled automatically. Vercel authenticates it with `CRON_SECRET`.
+- `GET /health`
+
+Setup:
+
+1. `vercel link`, then add every variable from `.env` plus `TELEGRAM_WEBHOOK_SECRET` and `CRON_SECRET` (random strings, e.g. `openssl rand -hex 32`) to Production.
+2. Make sure "Automatically expose System Environment Variables" is on (required by Vercel Workflow).
+3. Deploy, then point Telegram at it and register the command menu (needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env`, e.g. via `vercel env pull .env`):
+   ```bash
+   npm run telegram:setup -- https://ooo-bot-nu.vercel.app
+   ```
+   It prints the webhook Telegram now has and any recent delivery error. Use the public `ooo-bot-nu.vercel.app` domain: `ooo-bot-tedspace.vercel.app` is behind Vercel's login, so Telegram can't reach it.
 
 ## Commands
 
@@ -111,5 +126,5 @@ The morning check-in is sent at 08:30 UK time on weekdays with inline buttons fo
 ## Notes
 
 - State is read directly from the Gmail API — there is no database
-- Scheduled future changes (e.g. "out from 2pm", or the midday switch on a half day) are held in memory and lost on restart
+- Scheduled future changes ("out from 2pm", or the midday switch on a half day) run as a durable Vercel Workflow (`workflows/scheduled-change.ts`). Only one can be pending, and a new one replaces it.
 - The bot only responds to your Telegram chat ID — messages from anyone else are silently ignored

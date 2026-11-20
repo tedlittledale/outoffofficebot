@@ -2,91 +2,18 @@ import { type Telegraf, type Context } from 'telegraf';
 import { DateTime } from 'luxon';
 import { config } from '../config.js';
 import { createGmailAuth } from '../gmail/auth.js';
-import {
-  enableVacation,
-  disableVacation,
-  getVacationStatus,
-  GmailApiError,
-} from '../gmail/vacation.js';
+import { enableVacation, getVacationStatus } from '../gmail/vacation.js';
 import { cancelScheduleKeyboard } from './keyboards.js';
 import {
-  scheduleOutAt,
   scheduleChange,
-  cancelPendingSchedule,
-  getPendingSchedule,
-} from '../scheduler/adhoc.js';
-import {
-  clearSlackStatus,
-  endSlackSnooze,
-  isSlackConfigured,
-  setSlackPresence,
-  setSlackSnooze,
-  setSlackStatus,
-} from '../slack/status.js';
+  cancelScheduledChange,
+  describeChange,
+  getScheduledChange,
+} from '../scheduler/scheduled-change.js';
+import { applySlackStatus, slackSuffix } from '../slack/apply.js';
+import { clearOoo, formatError, setFlexible, setOut } from '../actions.js';
 
 const auth = createGmailAuth();
-
-type SlackVariant = 'out' | 'flexible' | 'childcare' | 'holiday';
-
-const AWAY_VARIANTS: ReadonlySet<SlackVariant> = new Set(['out', 'childcare', 'holiday']);
-
-function minutesUntil(end: DateTime): number {
-  const now = DateTime.now().setZone(config.timezone);
-  return Math.max(1, Math.ceil(end.diff(now, 'minutes').minutes));
-}
-
-function snoozeMinutes(endTime: DateTime | null): number {
-  // No explicit end: snooze until end of today (re-armed next morning by cron)
-  const target =
-    endTime ?? DateTime.now().setZone(config.timezone).endOf('day');
-  return minutesUntil(target);
-}
-
-async function applySlackStatus(
-  variant: SlackVariant,
-  endTime: DateTime | null = null,
-  textSuffix = '',
-): Promise<string | null> {
-  if (!isSlackConfigured() || !config.slack) return null;
-  const { emoji } = config.slack[variant];
-  const text = config.slack[variant].text + textSuffix;
-  const isAway = AWAY_VARIANTS.has(variant);
-  const expirationSec = endTime ? Math.floor(endTime.toSeconds()) : 0;
-  try {
-    await setSlackStatus(text, emoji, expirationSec);
-    await setSlackPresence(isAway ? 'away' : 'auto');
-    if (isAway) {
-      await setSlackSnooze(snoozeMinutes(endTime));
-    } else {
-      await endSlackSnooze().catch(() => {
-        /* ignore "snooze_not_active" */
-      });
-    }
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
-}
-
-async function applySlackClear(): Promise<string | null> {
-  if (!isSlackConfigured()) return null;
-  try {
-    await clearSlackStatus();
-    await setSlackPresence('auto');
-    await endSlackSnooze().catch(() => {
-      /* ignore "snooze_not_active" */
-    });
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
-}
-
-function slackSuffix(slackError: string | null): string {
-  if (!isSlackConfigured()) return '';
-  if (slackError) return `\n(Slack status update failed: ${slackError})`;
-  return '\nSlack status updated.';
-}
 
 interface ParsedCommand {
   type:
@@ -256,16 +183,6 @@ export function parseCommand(text: string): ParsedCommand {
   return { type: 'unknown' };
 }
 
-function formatError(err: unknown): string {
-  if (err instanceof GmailApiError) {
-    return `Gmail API error (${err.code}): ${err.message}`;
-  }
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return String(err);
-}
-
 const HELP_TEXT = `Available commands:
 
 *in* / *back* — Clear OOO, auto-reply off
@@ -289,24 +206,6 @@ Examples:
 
 Without your own text, the default holiday auto-reply is used.`;
 
-// Each returns the reply to send; Gmail failures throw.
-async function clearOoo(): Promise<string> {
-  const current = await getVacationStatus(auth);
-  await disableVacation(auth);
-  const slackError = await applySlackClear();
-  const note = current.enabled ? '' : ' (was already off)';
-  return `OOO cleared. Auto-reply is off.${note}${slackSuffix(slackError)}`;
-}
-
-async function setFlexible(): Promise<string> {
-  await enableVacation(auth, {
-    subject: config.messages.subject,
-    message: config.messages.flexible,
-  });
-  const slackError = await applySlackStatus('flexible');
-  return `OOO set: Flexible. Auto-reply is on with flexible message.${slackSuffix(slackError)}`;
-}
-
 async function handleIn(ctx: Context): Promise<void> {
   try {
     await ctx.reply(await clearOoo());
@@ -317,14 +216,7 @@ async function handleIn(ctx: Context): Promise<void> {
 
 async function handleOut(ctx: Context): Promise<void> {
   try {
-    const current = await getVacationStatus(auth);
-    await enableVacation(auth, {
-      subject: config.messages.subject,
-      message: config.messages.out,
-    });
-    const slackError = await applySlackStatus('out');
-    const note = current.enabled ? ' (was already on)' : '';
-    await ctx.reply(`OOO set: Out. Auto-reply is on.${note}${slackSuffix(slackError)}`);
+    await ctx.reply(await setOut());
   } catch (err) {
     await ctx.reply(`Failed to set OOO: ${formatError(err)}`);
   }
@@ -357,7 +249,6 @@ async function handleChildcare(ctx: Context): Promise<void> {
 // message for the other, switching over at config.halfDaySwitchTime.
 async function handleHalfDay(
   ctx: Context,
-  bot: Telegraf,
   working: 'morning' | 'afternoon',
 ): Promise<void> {
   const switchAt =
@@ -365,8 +256,7 @@ async function handleHalfDay(
   const switchLabel = switchAt.toFormat('HH:mm');
   const [first, second] =
     working === 'morning' ? [clearOoo, setFlexible] : [setFlexible, clearOoo];
-  const secondLabel =
-    working === 'morning' ? 'Flexible message on' : 'OOO cleared';
+  const secondKind = working === 'morning' ? 'flexible' : 'clear';
 
   try {
     if (DateTime.now().setZone(config.timezone) >= switchAt) {
@@ -375,15 +265,9 @@ async function handleHalfDay(
     }
 
     const reply = await first();
-    scheduleChange(
-      bot,
-      switchAt,
-      config.telegram.allowedChatId,
-      `${secondLabel} at ${switchLabel}`,
-      async () => `It's ${switchLabel}. ${await second()}`,
-    );
+    await scheduleChange(switchAt, secondKind);
     await ctx.reply(
-      `Working this ${working}. ${reply}\n\n${secondLabel} at ${switchLabel}.`,
+      `Working this ${working}. ${reply}\n\n${describeChange({ at: switchAt, kind: secondKind })}.`,
       cancelScheduleKeyboard,
     );
   } catch (err) {
@@ -394,7 +278,7 @@ async function handleHalfDay(
 async function handleStatus(ctx: Context): Promise<void> {
   try {
     const status = await getVacationStatus(auth);
-    const pending = getPendingSchedule();
+    const pending = await getScheduledChange();
 
     let reply = status.enabled
       ? `Auto-reply is *on*.\nSubject: ${status.subject ?? '(none)'}`
@@ -405,9 +289,8 @@ async function handleStatus(ctx: Context): Promise<void> {
       reply += `\nEnds: ${endDate.toFormat('cccc d MMMM, HH:mm')}`;
     }
 
-    if (pending.scheduled && pending.time) {
-      const schedTime = DateTime.fromJSDate(pending.time).setZone(config.timezone);
-      reply += `\n\nPending: ${pending.description}`;
+    if (pending) {
+      reply += `\n\nPending: ${describeChange(pending)}`;
     }
 
     await ctx.reply(reply, { parse_mode: 'Markdown' });
@@ -433,7 +316,7 @@ async function handleHoliday(ctx: Context, args: string): Promise<void> {
         : config.messages.holiday.replaceAll('{back}', backLong),
       endTime: back.toJSDate(),
     });
-    cancelPendingSchedule();
+    await cancelScheduledChange();
     const slackError = await applySlackStatus(
       'holiday',
       back,
@@ -448,37 +331,22 @@ async function handleHoliday(ctx: Context, args: string): Promise<void> {
   }
 }
 
-// Called before the morning check-in so that, if no answer comes, Gmail and
-// Slack sit at their defaults rather than carrying over yesterday's status.
-// A holiday or "out until <date>" that hasn't ended yet is left in place, and
-// `away` says whether it runs past today (so there's no need to ask).
-export async function resetForMorning(): Promise<{ away: boolean; error: string | null }> {
-  try {
-    const current = await getVacationStatus(auth);
-    if (current.enabled && current.endTime && current.endTime > Date.now()) {
-      const endOfToday = DateTime.now().setZone(config.timezone).endOf('day');
-      return { away: current.endTime > endOfToday.toMillis(), error: null };
-    }
-    if (current.enabled) await disableVacation(auth);
-  } catch (err) {
-    return { away: false, error: `Failed to clear Gmail auto-reply: ${formatError(err)}` };
-  }
-  const slackError = await applySlackClear();
-  return { away: false, error: slackError ? `Slack status clear failed: ${slackError}` : null };
-}
-
-async function handleOutFrom(ctx: Context, bot: Telegraf, time: DateTime): Promise<void> {
+async function handleOutFrom(ctx: Context, time: DateTime): Promise<void> {
   const now = DateTime.now().setZone(config.timezone);
   if (time <= now) {
     await ctx.reply("That time has already passed today. Send 'out' to enable OOO now.");
     return;
   }
 
-  scheduleOutAt(bot, time, config.telegram.allowedChatId, auth);
-  await ctx.reply(
-    `OOO scheduled: Out from ${time.toFormat('HH:mm')} today.`,
-    cancelScheduleKeyboard,
-  );
+  try {
+    await scheduleChange(time, 'out');
+    await ctx.reply(
+      `OOO scheduled: Out from ${time.toFormat('HH:mm')} today.`,
+      cancelScheduleKeyboard,
+    );
+  } catch (err) {
+    await ctx.reply(`Failed to schedule OOO: ${formatError(err)}`);
+  }
 }
 
 async function handleOutUntil(ctx: Context, endDate: DateTime): Promise<void> {
@@ -534,20 +402,20 @@ export function registerHandlers(bot: Telegraf): void {
   bot.action('status_morning', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageText('You selected: Working morning');
-    await handleHalfDay(ctx, bot, 'morning');
+    await handleHalfDay(ctx, 'morning');
   });
 
   bot.action('status_afternoon', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageText('You selected: Working afternoon');
-    await handleHalfDay(ctx, bot, 'afternoon');
+    await handleHalfDay(ctx, 'afternoon');
   });
 
   bot.action('cancel_schedule', async (ctx) => {
     await ctx.answerCbQuery();
-    const result = cancelPendingSchedule();
-    if (result.cancelled) {
-      await ctx.editMessageText(`Cancelled: ${result.description}`);
+    const cancelled = await cancelScheduledChange();
+    if (cancelled) {
+      await ctx.editMessageText(`Cancelled: ${describeChange(cancelled)}`);
     } else {
       await ctx.editMessageText('No pending schedule to cancel.');
     }
@@ -577,13 +445,13 @@ export function registerHandlers(bot: Telegraf): void {
         break;
       case 'morning':
       case 'afternoon':
-        await handleHalfDay(ctx, bot, command.type);
+        await handleHalfDay(ctx, command.type);
         break;
       case 'status':
         await handleStatus(ctx);
         break;
       case 'out_from':
-        await handleOutFrom(ctx, bot, command.time!);
+        await handleOutFrom(ctx, command.time!);
         break;
       case 'out_until':
         await handleOutUntil(ctx, command.time!);

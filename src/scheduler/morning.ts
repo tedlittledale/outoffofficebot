@@ -1,38 +1,15 @@
-import cron from 'node-cron';
 import { type Telegraf } from 'telegraf';
 import { config } from '../config.js';
 import { morningKeyboard } from '../bot/keyboards.js';
-import { resetForMorning } from '../bot/handlers.js';
+import { resetForMorning } from '../actions.js';
 
-let task: cron.ScheduledTask | null = null;
-
-export function startMorningCron(bot: Telegraf): void {
-  // Weekdays at 8:30am in configured timezone
-  task = cron.schedule(
-    '30 8 * * 1-5',
-    async () => {
-      const { away, error } = await resetForMorning();
-      if (error) console.error('Morning reset failed:', error);
-      if (away) return;
-      try {
-        await bot.telegram.sendMessage(
-          config.telegram.allowedChatId,
-          `Good morning! What's your status today?${error ? `\n(${error})` : ''}`,
-          morningKeyboard,
-        );
-      } catch (err) {
-        console.error('Failed to send morning check-in:', err);
-      }
-    },
-    { timezone: config.timezone },
+export async function sendMorningCheckin(bot: Telegraf): Promise<void> {
+  const { away, error } = await resetForMorning();
+  if (error) console.error('Morning reset failed:', error);
+  if (away) return;
+  await bot.telegram.sendMessage(
+    config.telegram.allowedChatId,
+    `Good morning! What's your status today?${error ? `\n(${error})` : ''}`,
+    morningKeyboard,
   );
-
-  console.log(`Morning cron scheduled: 08:30 ${config.timezone}, weekdays`);
-}
-
-export function stopMorningCron(): void {
-  if (task) {
-    task.stop();
-    task = null;
-  }
 }
