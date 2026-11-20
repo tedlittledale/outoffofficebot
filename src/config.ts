@@ -14,7 +14,9 @@ export const config = {
   telegram: {
     botToken: required('TELEGRAM_BOT_TOKEN'),
     allowedChatId: Number(required('TELEGRAM_CHAT_ID')),
+    webhookSecret: process.env['TELEGRAM_WEBHOOK_SECRET'],
   },
+  cronSecret: process.env['CRON_SECRET'],
   gmail: {
     clientId: required('GOOGLE_CLIENT_ID'),
     clientSecret: required('GOOGLE_CLIENT_SECRET'),
@@ -51,7 +53,7 @@ export const config = {
       }
     : null,
   timezone: process.env['OOO_TIMEZONE'] ?? 'Europe/London',
-  port: Number(process.env['PORT'] ?? '8080'),
+  morningCheckinHour: Number(process.env['MORNING_CHECKIN_HOUR'] ?? '8'),
   // When a "working morning/afternoon" day switches over, e.g. "13:00"
   halfDaySwitchTime: process.env['HALF_DAY_SWITCH_TIME'] ?? '13:00',
   messages: {
