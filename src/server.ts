@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { config } from './config.js';
 import { bot } from './bot/index.js';
 import { sendMorningCheckin } from './scheduler/morning.js';
+import { ensureWebhook } from './bot/webhook.js';
 
 const app = new Hono();
 
@@ -25,6 +26,11 @@ app.post('/api/telegram', async (c) => {
 app.get('/api/cron/morning', async (c) => {
   if (!authorized(config.cronSecret && `Bearer ${config.cronSecret}`, c.req.header('Authorization'))) {
     return c.text('Unauthorized', 401);
+  }
+  if (config.telegram.webhookSecret) {
+    await ensureWebhook(bot.telegram, config.telegram.webhookUrl, config.telegram.webhookSecret).catch(
+      (err) => console.error('Webhook check failed:', err),
+    );
   }
   const now = DateTime.now().setZone(config.timezone);
   if (now.hour !== config.morningCheckinHour) {

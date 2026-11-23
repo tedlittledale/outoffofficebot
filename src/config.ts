@@ -15,6 +15,9 @@ export const config = {
     botToken: required('TELEGRAM_BOT_TOKEN'),
     allowedChatId: Number(required('TELEGRAM_CHAT_ID')),
     webhookSecret: process.env['TELEGRAM_WEBHOOK_SECRET'],
+    // Must be publicly reachable: the ooo-bot-tedspace alias is behind Vercel login
+    webhookUrl:
+      process.env['TELEGRAM_WEBHOOK_URL'] ?? 'https://ooo-bot-nu.vercel.app/api/telegram',
   },
   cronSecret: process.env['CRON_SECRET'],
   gmail: {
