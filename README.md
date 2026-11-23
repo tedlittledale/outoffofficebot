@@ -84,7 +84,7 @@ npm run dev
 npm run dev:poll
 ```
 
-> **Don't poll with the production bot token.** Starting to poll deletes the bot's webhook, which silently stops the deployed bot receiving any messages or button taps. `dev:poll` refuses to start while a webhook is set; use a separate test bot from @BotFather for local polling. If the webhook does get deleted, run `npm run telegram:setup` (below) to restore it.
+> **Don't poll with the production bot token.** Starting to poll deletes the bot's webhook, which silently stops the deployed bot receiving any messages or button taps. `dev:poll` refuses to start while a webhook is set; use a separate test bot from @BotFather for local polling. If the webhook does get deleted, the hourly cron restores it (see below).
 
 ## Deploy to Vercel
 
@@ -100,11 +100,9 @@ Setup:
 
 1. `vercel link`, then add every variable from `.env` plus `TELEGRAM_WEBHOOK_SECRET` and `CRON_SECRET` (random strings, e.g. `openssl rand -hex 32`) to Production.
 2. Make sure "Automatically expose System Environment Variables" is on (required by Vercel Workflow).
-3. Deploy, then point Telegram at it and register the command menu (needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env`, e.g. via `vercel env pull .env`):
-   ```bash
-   npm run telegram:setup -- https://ooo-bot-nu.vercel.app
-   ```
-   It prints the webhook Telegram now has and any recent delivery error. Use the public `ooo-bot-nu.vercel.app` domain: `ooo-bot-tedspace.vercel.app` is behind Vercel's login, so Telegram can't reach it.
+3. Deploy. Within the hour, the cron run points Telegram at `TELEGRAM_WEBHOOK_URL` (default `https://ooo-bot-nu.vercel.app/api/telegram`) and registers the command menu. It checks this every hour, so if the webhook is ever deleted or changed, the bot repairs it on its own. Use the public `ooo-bot-nu.vercel.app` domain: `ooo-bot-tedspace.vercel.app` is behind Vercel's login, so Telegram can't reach it.
+
+   To do it straight away instead, put the real `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env` (`vercel env pull` only gives `[SENSITIVE]` placeholders for these) and run `npm run telegram:setup -- https://ooo-bot-nu.vercel.app`.
 
 ## Commands
 
